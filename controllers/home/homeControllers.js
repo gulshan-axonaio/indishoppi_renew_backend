@@ -873,7 +873,7 @@ class homeControllers {
           subcategory: 1,
           category: 1,
           images: 1,
-          _id: 0,
+          _id: 1,
         }
       );
 
