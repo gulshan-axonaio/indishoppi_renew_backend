@@ -16,9 +16,9 @@ const authOrder = require("../../models/authOrder");
 const cardModel = require("../../models/cardModel");
 const { sendOrderConfirmationEmail } = require("../../utiles/email/sendEmail");
 const androidCustomerOrderModel = require("../../models/androidCustomerOrderModel");
-const stripe = require("stripe")(
-  "sk_test_51Nk8Y4F0B89ncn3xMHxYCwnaouDR6zuX83ckbJivv2jOUJ9CTka6anJcKMLnatgeBUeQq1RcRYynSPgp6f5zS4qF00YZFMYHuD"
-);
+// const stripe = require("stripe")(
+//   "sk_test_51Nk8Y4F0B89ncn3xMHxYCwnaouDR6zuX83ckbJivv2jOUJ9CTka6anJcKMLnatgeBUeQq1RcRYynSPgp6f5zS4qF00YZFMYHuD"
+// );
 const helpers = require("handlebars-helpers")();
 class paymentController {
   do_payment = async (req, res) => {

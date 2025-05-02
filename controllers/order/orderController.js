@@ -23,9 +23,9 @@ const androidCustomerOrderModel = require("../../models/androidCustomerOrderMode
 const { response } = require("express");
 const { database } = require("firebase-admin");
 const customerModel = require("../../models/customerModel");
-const stripe = require("stripe")(
-  "sk_test_51Nk8Y4F0B89ncn3xMHxYCwnaouDR6zuX83ckbJivv2jOUJ9CTka6anJcKMLnatgeBUeQq1RcRYynSPgp6f5zS4qF00YZFMYHuD"
-);
+// const stripe = require("stripe")(
+//   "sk_test_51Nk8Y4F0B89ncn3xMHxYCwnaouDR6zuX83ckbJivv2jOUJ9CTka6anJcKMLnatgeBUeQq1RcRYynSPgp6f5zS4qF00YZFMYHuD"
+// );
 
 class orderController {
   add_address = async (req, res) => {
