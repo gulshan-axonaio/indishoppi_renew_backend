@@ -1097,6 +1097,32 @@ class productController {
       responseReturn(res, 500, { message: error.message });
     }
   };
+
+  get_search_item = async (req, res) => {
+    const { searchValue } = req.params;
+    const { id } = req;
+    const decodedSearchValue = decodeURIComponent(searchValue).trim();
+
+    try {
+      const regex = new RegExp(`^${decodedSearchValue}$`, "i");
+      const product = await productModel.find({
+        sellerId: id,
+        name: { $regex: regex },
+      });
+
+      if (product.length === 0) {
+        return res.status(200).json({ message: "No products found" });
+      }
+
+      console.log("Matched Products:", product);
+      responseReturn(res, 200, { product });
+    } catch (error) {
+      console.log("Search Error:", error.message);
+      res
+        .status(500)
+        .json({ message: "Server error while searching products." });
+    }
+  };
 }
 
 module.exports = new productController();

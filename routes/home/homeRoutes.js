@@ -40,7 +40,7 @@ router.get("/product/suggest-search/:search", homeControllers.suggestSearch);
 
 router.get("/allproducts", homeControllers.allProducts);
 router.get("/allsubcats", homeControllers.allSubcategorys);
-router.get("/products", homeControllers.fetchBySubcat);
+router.post("/products", homeControllers.fetchBySubcat);
 router.post("/coupons/get", couponsController.get_coupons);
 router.post("/coupons/apply", couponsController.apply_coupon);
 

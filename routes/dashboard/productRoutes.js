@@ -46,6 +46,12 @@ router.post(
   productController.product_varient_update
 );
 
+router.get(
+  "/get-search-item/:searchValue",
+  authMiddleware,
+  productController.get_search_item
+);
+
 router.post(
   "/product-image-update",
   authMiddleware,

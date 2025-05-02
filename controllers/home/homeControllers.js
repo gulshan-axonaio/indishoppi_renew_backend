@@ -4,6 +4,7 @@ const androidCustomerOrderModel = require("../../models/androidCustomerOrderMode
 const queryProducts = require("../../utiles/queryProducts");
 const reviewModel = require("../../models/reviewModel");
 const customerModel = require("../../models/customerModel");
+const mongoose = require("mongoose");
 const moment = require("moment");
 const {
   mongo: { ObjectId },
@@ -849,19 +850,18 @@ class homeControllers {
     });
   };
   fetchBySubcat = async (req, res) => {
-    const { type, subcategory, category } = req.query;
+    try {
+      const { type, subcategoryId, categoryId } = req.body;
 
-    console.log("check", { type, subcategory, category });
+      console.log("check", { type, subcategoryId, categoryId });
 
-    let matchQuery = {};
-    if (subcategory) matchQuery.subcategory = subcategory;
-    if (category) matchQuery.category = category;
-    if (type) matchQuery.type = type;
-
-    const products = await productModel.aggregate([
-      { $match: matchQuery },
-      {
-        $project: {
+      const products = await productModel.find(
+        {
+          category: new mongoose.Types.ObjectId(categoryId),
+          subcategory: new mongoose.Types.ObjectId(subcategoryId),
+          type: new mongoose.Types.ObjectId(type),
+        },
+        {
           slug: 1,
           brand: 1,
           price: 1,
@@ -873,14 +873,23 @@ class homeControllers {
           subcategory: 1,
           category: 1,
           images: 1,
-        },
-      },
-    ]);
-    responseReturn(res, 200, {
-      message: "products fetched successfully",
-      status: 200,
-      data: products,
-    });
+          _id: 0,
+        }
+      );
+
+      responseReturn(res, 200, {
+        message: "products fetched successfully",
+        status: 200,
+        data: products,
+      });
+    } catch (error) {
+      console.error("Error in fetchBySubcat:", error);
+      responseReturn(res, 500, {
+        message: "Internal Server Error",
+        status: 500,
+        error: error.message,
+      });
+    }
   };
 
   searchProducts = async (req, res) => {
