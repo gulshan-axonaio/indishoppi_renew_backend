@@ -1,0 +1,39 @@
+<html>
+  <head>
+    <title>Order Confirmation</title>
+  </head>
+  <body>
+    <h1>Thank you for your order!</h1>
+    <p>Your order has been placed successfully. Here are the details:</p>
+    <table border="1" cellpadding="10">
+      <thead>
+        <tr>
+          <th>Product Name</th>
+          <th>Category</th>
+          <th>Price</th>
+          <th>Discount</th>
+          <th>Quantity</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each products}}
+          <tr>
+            <td>{{this.name}}</td>
+            <td>{{this.category}}</td>
+            <td>₹{{this.price}}</td>
+            <td>{{this.discount}}%</td>
+            <td>{{this.quantity}}</td>
+            <td>₹{{multiply
+                this.price
+                (divide this.discount 100)
+                this.quantity
+              }}</td>
+          </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    <h3>Total Amount: ₹{{total}}</h3>
+    <p>We hope to see you again soon!</p>
+  </body>
+</html>
