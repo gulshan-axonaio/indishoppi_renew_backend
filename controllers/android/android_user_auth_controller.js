@@ -135,11 +135,11 @@ const verifyLoginPhoneOtp = async (req, res) => {
 };
 async function registerUser(req, res) {
   try {
-    const { phonenumber, email, name } = req.body;
+    const { phonenumber } = req.body;
     if (!phonenumber) {
       return res.status(400).json({
         status: 400,
-        message: "please provide phonenumber, email, username",
+        message: "please provide phonenumber",
       });
     }
     const isUserExist = await customerModel.findOne({ phonenumber });
@@ -172,8 +172,6 @@ async function registerUser(req, res) {
     }
 
     const user = new customerModel({
-      name,
-      email,
       phonenumber,
       method: "mannualy",
       otp,

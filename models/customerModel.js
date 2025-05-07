@@ -4,14 +4,12 @@ const customerSchema = new Schema(
   {
     name: {
       type: String,
-      required: true,
     },
     phonenumber: {
       type: String,
     },
     email: {
       type: String,
-      required: true,
     },
     password: {
       type: String,
