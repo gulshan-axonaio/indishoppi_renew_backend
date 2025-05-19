@@ -154,39 +154,48 @@ class productController {
   };
 
   products_get = async (req, res) => {
-    const { page, searchValue, parPage } = req.query;
+    // const { page, searchValue, parPage } = req.query;
     const { id } = req;
 
-    const skipPage = parseInt(parPage) * (parseInt(page) - 1);
+    // const skipPage = parseInt(parPage) * (parseInt(page) - 1);
 
     try {
-      if (searchValue) {
-        const products = await productModel
-          .find({
-            $text: { $search: searchValue },
-            sellerId: id,
-          })
-          .skip(skipPage)
-          .limit(parPage)
-          .sort({ createdAt: -1 });
-        const totalProduct = await productModel
-          .find({
-            $text: { $search: searchValue },
-            sellerId: id,
-          })
-          .countDocuments();
-        responseReturn(res, 200, { totalProduct, products });
-      } else {
-        const products = await productModel
-          .find({ sellerId: id })
-          .skip(skipPage)
-          .limit(parPage)
-          .sort({ createdAt: -1 });
-        const totalProduct = await productModel
-          .find({ sellerId: id })
-          .countDocuments();
-        responseReturn(res, 200, { totalProduct, products });
-      }
+      const products = await productModel
+        .find({ sellerId: id })
+        .sort({ createdAt: -1 });
+
+      const totalProduct = await productModel
+        .find({ sellerId: id })
+        .countDocuments();
+      responseReturn(res, 200, { totalProduct, products });
+
+      // if (searchValue) {
+      //   const products = await productModel
+      //     .find({
+      //       $text: { $search: searchValue },
+      //       sellerId: id,
+      //     })
+      //     .skip(skipPage)
+      //     .limit(parPage)
+      //     .sort({ createdAt: -1 });
+      //   const totalProduct = await productModel
+      //     .find({
+      //       $text: { $search: searchValue },
+      //       sellerId: id,
+      //     })
+      //     .countDocuments();
+      //   responseReturn(res, 200, { totalProduct, products });
+      // } else {
+      //   const products = await productModel
+      //     .find({ sellerId: id })
+      //     .skip(skipPage)
+      //     .limit(parPage)
+      //     .sort({ createdAt: -1 });
+      //   const totalProduct = await productModel
+      //     .find({ sellerId: id })
+      //     .countDocuments();
+      //   responseReturn(res, 200, { totalProduct, products });
+      // }
     } catch (error) {
       console.log(error.message);
     }
@@ -874,23 +883,85 @@ class productController {
     const { productId } = req.params;
 
     try {
+      const product = await productModel.findById(productId).select("type");
+
+      const filterOptionDoc = await filteroptionModel
+        .findById(product?.type)
+        .select("options");
+
+      const dynamicFields = filterOptionDoc?.options || [];
+
       const productDetails = await productModel
         .findById(productId)
         .populate({
           path: "variations",
           model: "variants",
         })
-        .select("-createdAt -updatedAt -__v");
+        .lean();
 
-      // console.log("productDetails", productDetails);
+      const staticFields = [
+        "productId",
+        "sellerId",
+        "name",
+        "slug",
+        "category",
+        "subcategory",
+        "brand",
+        "price",
+        "discount",
+        "discountedPrice",
+        "stock",
+        "featured",
+        "description",
+        "shopName",
+        "images",
+        "rating",
+        "sponsors",
+        "free_delivery",
+        "returnPolicy",
+        "type",
+        "colorCode",
+        "color",
+        "views",
+      ];
 
-      // return;
+      const finalResult = {};
+
+      // Add static fields from product
+      staticFields.forEach((field) => {
+        finalResult[field] = productDetails[field];
+      });
+
+      // Add dynamic fields from product
+      dynamicFields.forEach((field) => {
+        if (productDetails[field] !== undefined) {
+          finalResult[field] = productDetails[field];
+        }
+      });
+
+      // Add static + dynamic fields from variants
+      finalResult.variations = productDetails.variations.map((variant) => {
+        const variantObj = {};
+
+        staticFields.forEach((field) => {
+          if (variant[field] !== undefined) {
+            variantObj[field] = variant[field];
+          }
+        });
+
+        dynamicFields.forEach((field) => {
+          if (variant[field] !== undefined) {
+            variantObj[field] = variant[field];
+          }
+        });
+
+        return variantObj;
+      });
 
       const sponsors = await productModel.aggregate([
         {
           $match: { _id: new mongoose.Types.ObjectId(productId) },
         },
-
         {
           $lookup: {
             from: "products",
@@ -899,7 +970,6 @@ class productController {
             as: "sponsorDetails",
           },
         },
-
         {
           $project: {
             _id: 0,
@@ -908,7 +978,7 @@ class productController {
                 input: "$sponsorDetails",
                 as: "sponsor",
                 in: {
-                  image: { $arrayElemAt: ["$$sponsor.images", 0] }, // First image
+                  image: { $arrayElemAt: ["$$sponsor.images", 0] },
                   brand: "$$sponsor.brand",
                   price: "$$sponsor.price",
                   discount: "$$sponsor.discount",
@@ -924,16 +994,8 @@ class productController {
         {
           $match: {
             $and: [
-              {
-                _id: {
-                  $ne: productDetails._id,
-                },
-              },
-              {
-                category: {
-                  $eq: productDetails.category,
-                },
-              },
+              { _id: { $ne: productDetails._id } },
+              { category: { $eq: productDetails.category } },
             ],
           },
         },
@@ -950,7 +1012,6 @@ class productController {
             discount: 1,
             stock: 1,
             description: 1,
-            // Use $arrayElemAt to get the first image
             images: 1,
           },
         },
@@ -960,16 +1021,8 @@ class productController {
         {
           $match: {
             $and: [
-              {
-                _id: {
-                  $ne: productId,
-                },
-              },
-              {
-                sellerId: {
-                  $eq: productDetails.sellerId,
-                },
-              },
+              { _id: { $ne: productId } },
+              { sellerId: { $eq: productDetails.sellerId } },
             ],
           },
         },
@@ -986,7 +1039,6 @@ class productController {
             discount: 1,
             stock: 1,
             description: 1,
-            // Use $arrayElemAt to get the first image
             images: 1,
           },
         },
@@ -996,13 +1048,10 @@ class productController {
         responseReturn(res, 200, {
           message: "Product details retrieved successfully",
           data: {
-            productDetails: {
-              ...productDetails._doc,
-              variations: productDetails.variations,
-            },
+            productDetails: finalResult,
             relatedProducts,
             moreProducts,
-            sponsors: sponsors[0].sponsors,
+            sponsors: sponsors[0]?.sponsors || [],
           },
           status: 200,
         });
