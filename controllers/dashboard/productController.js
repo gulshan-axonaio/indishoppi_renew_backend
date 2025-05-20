@@ -20,19 +20,17 @@ class productController {
     const { id } = req;
     const chek = req.body;
 
-    // console.log("chek", chek);
-
-    // return;
-
     try {
-      // Extract dynamic fields from filteroptionModel
       const fields = await filteroptionModel.find({});
       let allOptions = [];
+
       fields.forEach((field) => {
         if (field.options && field.options.length > 0) {
-          allOptions = [...allOptions, ...field.options];
+          const labels = field.options.map((opt) => opt.label);
+          allOptions = [...allOptions, ...labels];
         }
       });
+
       const uniqueOptions = [...new Set(allOptions)];
 
       let dynamicFields = {};
@@ -328,11 +326,12 @@ class productController {
 
     const fields = await filteroptionModel.find({});
     let allOptions = [];
+
     fields.forEach((field) => {
       if (field.options && field.options.length > 0) {
-        allOptions = [...allOptions, ...field.options];
+        const labels = field.options.map((opt) => opt.label); // label nikaalo
+        allOptions = [...allOptions, ...labels];
       }
-      // console.log("Field object:", field);
     });
 
     const uniqueOptions = [...new Set(allOptions)];
@@ -343,6 +342,7 @@ class productController {
         dynamicFields[fieldName] = chek[fieldName];
       }
     });
+
     let {
       productId,
       category,
@@ -480,11 +480,12 @@ class productController {
 
     const fields = await filteroptionModel.find({});
     let allOptions = [];
+
     fields.forEach((field) => {
       if (field.options && field.options.length > 0) {
-        allOptions = [...allOptions, ...field.options];
+        const labels = field.options.map((opt) => opt.label);
+        allOptions = [...allOptions, ...labels];
       }
-      // console.log("Field object:", field);
     });
 
     const uniqueOptions = [...new Set(allOptions)];
@@ -495,6 +496,7 @@ class productController {
         dynamicFields[fieldName] = chek[fieldName];
       }
     });
+
     let {
       varientId,
       productId,
@@ -887,9 +889,10 @@ class productController {
 
       const filterOptionDoc = await filteroptionModel
         .findById(product?.type)
-        .select("options");
+        .select("options productType");
 
       const dynamicFields = filterOptionDoc?.options || [];
+      // const productType = filterOptionDoc?.productType || "";
 
       const productDetails = await productModel
         .findById(productId)
@@ -900,6 +903,7 @@ class productController {
         .lean();
 
       const staticFields = [
+        "_id",
         "productId",
         "sellerId",
         "name",
@@ -927,37 +931,52 @@ class productController {
 
       const finalResult = {};
 
-      // Add static fields from product
+      // 1. Static fields fill karo
       staticFields.forEach((field) => {
         finalResult[field] = productDetails[field];
       });
 
-      // Add dynamic fields from product
-      dynamicFields.forEach((field) => {
-        if (productDetails[field] !== undefined) {
-          finalResult[field] = productDetails[field];
+      // 2. Dynamic fields group section-wise
+      const groupedDynamicFields = {};
+      dynamicFields.forEach(({ label, section }) => {
+        if (!groupedDynamicFields[section]) {
+          groupedDynamicFields[section] = {};
+        }
+        if (productDetails[label] !== undefined) {
+          groupedDynamicFields[section][label] = productDetails[label];
         }
       });
 
-      // Add static + dynamic fields from variants
+      finalResult.specification = groupedDynamicFields;
+
+      // 3. Variants group section-wise
       finalResult.variations = productDetails.variations.map((variant) => {
         const variantObj = {};
 
+        // Static fields for variant
         staticFields.forEach((field) => {
           if (variant[field] !== undefined) {
             variantObj[field] = variant[field];
           }
         });
 
-        dynamicFields.forEach((field) => {
-          if (variant[field] !== undefined) {
-            variantObj[field] = variant[field];
+        // Dynamic fields for variant
+        const variantDynamicFields = {};
+        dynamicFields.forEach(({ label, section }) => {
+          if (!variantDynamicFields[section]) {
+            variantDynamicFields[section] = {};
+          }
+          if (variant[label] !== undefined) {
+            variantDynamicFields[section][label] = variant[label];
           }
         });
+
+        variantObj.specification = variantDynamicFields;
 
         return variantObj;
       });
 
+      // 4. Sponsors aggregation
       const sponsors = await productModel.aggregate([
         {
           $match: { _id: new mongoose.Types.ObjectId(productId) },
@@ -990,6 +1009,7 @@ class productController {
         },
       ]);
 
+      // 5. Related products
       const relatedProducts = await productModel.aggregate([
         {
           $match: {
@@ -1017,11 +1037,12 @@ class productController {
         },
       ]);
 
+      // 6. More products from same seller
       const moreProducts = await productModel.aggregate([
         {
           $match: {
             $and: [
-              { _id: { $ne: productId } },
+              { _id: { $ne: new mongoose.Types.ObjectId(productId) } },
               { sellerId: { $eq: productDetails.sellerId } },
             ],
           },
