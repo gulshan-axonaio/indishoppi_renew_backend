@@ -249,33 +249,80 @@ class productController {
     try {
       const { variantId, size } = req.body;
 
-      // Find the document by variantId and size
-      const variant = await ProductDetailsModel.findOne({
-        _id: variantId,
-        // size: { $regex: new RegExp(`\\b${size}\\b`, "i") },
-      });
-
-      if (!variant) {
+      const productDetails = await ProductDetailsModel.findById(
+        variantId
+      ).lean();
+      if (!productDetails) {
         return res
           .status(404)
           .json({ message: "Variant not found", status: 400 });
       }
 
-      // Modify the output object to replace the size field
-      const modifiedVariant = {
-        ...variant.toObject(), // Convert Mongoose document to plain object
-        size, // Replace size field with the given size
-      };
+      const filterOptionDoc = await filteroptionModel
+        .findById(productDetails?.type)
+        .select("options productType");
+
+      const dynamicFields = filterOptionDoc?.options || [];
+
+      const staticFields = [
+        "_id",
+        "productId",
+        "sellerId",
+        "name",
+        "slug",
+        "category",
+        "subcategory",
+        "brand",
+        "price",
+        "discount",
+        "discountedPrice",
+        "stock",
+        "featured",
+        "description",
+        "shopName",
+        "images",
+        "rating",
+        "sponsors",
+        "free_delivery",
+        "returnPolicy",
+        "type",
+        "colorCode",
+        "color",
+        "views",
+        "ram",
+        "storage",
+        "size",
+      ];
+
+      const finalResult = {};
+
+      // 1. Static fields fill karo
+      staticFields.forEach((field) => {
+        finalResult[field] = productDetails[field];
+      });
+
+      // 2. Dynamic fields group section-wise
+      const groupedDynamicFields = {};
+      dynamicFields.forEach(({ label, section }) => {
+        if (!groupedDynamicFields[section]) {
+          groupedDynamicFields[section] = {};
+        }
+        if (productDetails[label] !== undefined) {
+          groupedDynamicFields[section][label] = productDetails[label];
+        }
+      });
+
+      finalResult.specification = groupedDynamicFields;
 
       return res.status(200).json({
         message: "product details fetched",
         product: {
-          productDetails: modifiedVariant,
-          priceDetails: {
-            listedPrice: modifiedVariant.price,
-            discount: modifiedVariant.discount,
-            offerPrice: modifiedVariant.discountedPrice,
-          },
+          productDetails: finalResult,
+          // priceDetails: {
+          //   listedPrice: modifiedVariant.price,
+          //   discount: modifiedVariant.discount,
+          //   offerPrice: modifiedVariant.discountedPrice,
+          // },
         },
         status: 200,
       });
