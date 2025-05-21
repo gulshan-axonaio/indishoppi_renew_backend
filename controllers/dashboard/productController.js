@@ -927,6 +927,9 @@ class productController {
         "colorCode",
         "color",
         "views",
+        "ram",
+        "storage",
+        "size",
       ];
 
       const finalResult = {};
