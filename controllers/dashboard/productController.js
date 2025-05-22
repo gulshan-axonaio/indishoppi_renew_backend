@@ -6,6 +6,7 @@ const filteroptionModel = require("../../models/filteroptionModel");
 const sellerPickupLocationModel = require("../../models/sellerPickupLocationModel");
 const createDynamicProductSchema = require("../../models/productModel");
 const createDynamicVariantSchema = require("../../models/productDetailsModel");
+const searchFilteroptionModel = require("../../models/searchFilterModel");
 const { log } = require("handlebars/runtime");
 let productModel = null;
 let ProductDetailsModel = null;
@@ -1185,6 +1186,73 @@ class productController {
     }
   };
 
+  get_search_filter = async (req, res) => {
+    const searchFilter = await searchFilteroptionModel.find();
+
+    responseReturn(res, 200, {
+      message: "search filter fetch successfully.",
+      status: 200,
+      searchFilter,
+    });
+  };
+
+  add_search_filter_options = async (req, res) => {
+    const { productType, options } = req.body;
+
+    const exist = await searchFilteroptionModel.findOne({
+      productType: productType,
+    });
+
+    if (exist) {
+      return res.status(200).json({
+        message: "Search filter already exist",
+      });
+    }
+
+    try {
+      const uniqueOptions = [...new Set(options.map((opt) => opt.trim()))];
+
+      const filter = await searchFilteroptionModel.create({
+        productType,
+        options: uniqueOptions,
+      });
+
+      return res.status(200).json({
+        message: "Search filter options inserted successfully",
+        filter,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: error.message,
+      });
+    }
+  };
+
+  update_search_filter_options = async (req, res) => {
+    const { productType, options } = req.body;
+
+    try {
+      const filter = await searchFilteroptionModel.findOneAndUpdate(
+        { productType: productType },
+        {
+          $set: {
+            options,
+          },
+        },
+        { new: true, upsert: true }
+      );
+
+      return res.status(200).json({
+        message: "search filter options updated successfully",
+        filter,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: error.message,
+      });
+    }
+  };
+
   get_product_type = async (req, res) => {
     const { productTypeId } = req.params;
     try {
@@ -1241,6 +1309,282 @@ class productController {
       res
         .status(500)
         .json({ message: "Server error while searching products." });
+    }
+  };
+
+  search_filter_options = async (req, res) => {
+    const { category, subcategory, productType } = req.body;
+
+    try {
+      // Step 1: Fetch dynamic fields from filterOptionModel
+      const filterOptionDoc = await searchFilteroptionModel
+        .findOne({ productType })
+        .select("options");
+
+      const staticOptions = filterOptionDoc?.options || [];
+
+      // Separate out price and rating if present
+      const dynamicFields = staticOptions
+        .map((opt) => (typeof opt === "string" ? { label: opt } : opt)) // Normalize to object
+        .filter((opt) => opt.label !== "rating"); // Rating handled separately
+
+      const fieldLabels = dynamicFields.map((opt) => opt.label);
+
+      // Step 2: Prepare group stage dynamically
+      const groupFields = {};
+      fieldLabels.forEach((field) => {
+        groupFields[field] = { $addToSet: `$${field}` };
+      });
+
+      const result = await productModel.aggregate([
+        {
+          $match: {
+            category: new mongoose.Types.ObjectId(category),
+            subcategory: new mongoose.Types.ObjectId(subcategory),
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            ...groupFields,
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            ...Object.fromEntries(fieldLabels.map((field) => [field, 1])),
+          },
+        },
+      ]);
+
+      const resultData = result[0] || {};
+
+      // Step 3: Build final filter object
+      const data = {
+        rating: ["all", 1, 2, 3, 4, 5], // Static rating values
+      };
+
+      for (const field of fieldLabels) {
+        if (field === "price") {
+          // Special case for price
+          const prices = resultData.price || [];
+          const interval = 100;
+          const buckets = [];
+
+          for (let i = 0; i < 500; i += interval) {
+            buckets.push(`${i}-${i + interval}`);
+          }
+
+          if (prices.some((p) => p > 500)) {
+            buckets.push("500+");
+          }
+
+          data.price = ["all", ...buckets];
+        } else {
+          // All other dynamic fields
+          data[field] = ["all", ...(resultData[field] || [])];
+        }
+      }
+
+      return responseReturn(res, 200, {
+        message: "Filter options fetched successfully",
+        status: 200,
+        data,
+      });
+    } catch (error) {
+      console.error(error);
+      return responseReturn(res, 500, {
+        message: "Internal server error",
+        status: 500,
+      });
+    }
+  };
+
+  search_filter_products = async (req, res) => {
+    try {
+      const {
+        productType,
+        category,
+        subcategory,
+        ...dynamicFilters
+      } = req.body;
+
+      const andConditions = [];
+
+      if (category) {
+        andConditions.push({ category });
+      } else {
+        return responseReturn(res, 400, {
+          message: "category is required",
+          status: 400,
+        });
+      }
+
+      if (subcategory) {
+        andConditions.push({ subcategory });
+      } else {
+        return responseReturn(res, 400, {
+          message: "subcategory is required",
+          status: 400,
+        });
+      }
+
+      for (const [field, value] of Object.entries(dynamicFilters)) {
+        if (value == null) continue;
+
+        if (Array.isArray(value) && value.length) {
+          const allStrings = value.every((v) => typeof v === "string");
+          const allNumbers = value.every((v) => typeof v === "number");
+
+          if (allStrings && value.every((v) => v.includes("-"))) {
+            const parsed = value.map((range) => range.split("-").map(Number));
+            const mins = parsed.map(([min]) => min);
+            const maxs = parsed.map(([, max]) => max);
+            const globalMin = Math.min(...mins);
+            const globalMax = Math.max(...maxs);
+            andConditions.push({
+              [field]: { $gte: globalMin, $lte: globalMax },
+            });
+          } else if (allStrings || allNumbers) {
+            andConditions.push({
+              [field]: { $in: value },
+            });
+          }
+        } else if (
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
+        ) {
+          andConditions.push({ [field]: value });
+        }
+      }
+
+      const mongoQuery = andConditions.length ? { $and: andConditions } : {};
+
+      const filterOptionDoc = await filteroptionModel
+        .findById(productType)
+        .select("options productType");
+
+      const dynamicFields = filterOptionDoc?.options || [];
+
+      const productDetails = await productModel
+        .find(mongoQuery)
+        .populate({
+          path: "variations",
+          model: "variants",
+        })
+        .populate("category", "name")
+        .populate("subcategory", "name")
+        .lean();
+
+      const staticFields = [
+        "_id",
+        "productId",
+        "sellerId",
+        "name",
+        "slug",
+        "category",
+        "subcategory",
+        "brand",
+        "price",
+        "discount",
+        "discountedPrice",
+        "stock",
+        "featured",
+        "description",
+        "shopName",
+        "images",
+        "rating",
+        "sponsors",
+        "free_delivery",
+        "returnPolicy",
+        "type",
+        "colorCode",
+        "color",
+        "views",
+        "ram",
+        "storage",
+        "size",
+      ];
+
+      const finalResult = productDetails.map((product) => {
+        const result = {};
+
+        // Static fields
+        staticFields.forEach((field) => {
+          if (field === "category" && product.category) {
+            result["category"] = product.category._id;
+            result["categoryName"] = product.category.name;
+          } else if (field === "subcategory" && product.subcategory) {
+            result["subcategory"] = product.subcategory._id;
+            result["subcategoryName"] = product.subcategory.name;
+          } else {
+            result[field] = product[field];
+          }
+        });
+
+        // Dynamic fields (grouped section-wise)
+        const groupedDynamicFields = {};
+        dynamicFields.forEach(({ label, section }) => {
+          if (!groupedDynamicFields[section]) {
+            groupedDynamicFields[section] = {};
+          }
+          if (product[label] !== undefined) {
+            groupedDynamicFields[section][label] = product[label];
+          }
+        });
+
+        result.specification = groupedDynamicFields;
+
+        // Variations (grouped section-wise)
+        result.variations = (product.variations || []).map((variant) => {
+          const variantObj = {};
+
+          // Static fields in variant
+          staticFields.forEach((field) => {
+            if (field === "category" && variant.category) {
+              variantObj["category"] = variant.category._id;
+              variantObj["categoryName"] = variant.category.name;
+            } else if (field === "subcategory" && variant.subcategory) {
+              variantObj["subcategory"] = variant.subcategory._id;
+              variantObj["subcategoryName"] = variant.subcategory.name;
+            } else {
+              variantObj[field] = variant[field];
+            }
+          });
+
+          // Dynamic fields in variant
+          const variantDynamicFields = {};
+          dynamicFields.forEach(({ label, section }) => {
+            if (!variantDynamicFields[section]) {
+              variantDynamicFields[section] = {};
+            }
+            if (variant[label] !== undefined) {
+              variantDynamicFields[section][label] = variant[label];
+            }
+          });
+
+          variantObj.specification = variantDynamicFields;
+
+          return variantObj;
+        });
+
+        return result;
+      });
+
+      return responseReturn(res, 200, {
+        message: "Product details retrieved successfully",
+        data: {
+          productDetails: finalResult,
+        },
+        status: 200,
+      });
+    } catch (error) {
+      console.error("search_filter_products error:", error);
+      return responseReturn(res, 500, {
+        message: "Internal server error",
+        status: 500,
+      });
     }
   };
 }

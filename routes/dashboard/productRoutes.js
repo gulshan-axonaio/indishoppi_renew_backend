@@ -80,6 +80,18 @@ router.post(
 router.post("/filter", authMiddleware, productController.addFilter);
 
 router.get(
+  "/admin/get-search-filter",
+  authMiddleware,
+  productController.get_search_filter
+);
+
+router.post(
+  "/add-search-filter-options",
+  authMiddleware,
+  productController.add_search_filter_options
+);
+
+router.get(
   "/get-product-type/:productTypeId",
   authMiddleware,
   productController.get_product_type
@@ -88,6 +100,12 @@ router.delete(
   "/delete-product-type/:productTypeId",
   authMiddleware,
   productController.delete_product_type
+);
+
+router.post("/search-filter-options", productController.search_filter_options);
+router.post(
+  "/search-filter-products",
+  productController.search_filter_products
 );
 
 module.exports = router;
