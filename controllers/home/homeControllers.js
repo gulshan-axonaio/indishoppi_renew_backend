@@ -904,7 +904,9 @@ class homeControllers {
       }
 
       const searchValue = search.toLowerCase();
-      const categorys = await categoryModel.aggregate([
+
+      // Search categories
+      const categories = await categoryModel.aggregate([
         {
           $match: {
             name: { $regex: searchValue, $options: "i" },
@@ -916,36 +918,40 @@ class homeControllers {
             slug: 1,
             image: 1,
             _id: 1,
-            type: "category",
-          },
-        },
-        { $limit: 10 },
-      ]);
-      const subcategorys = await subCategory.aggregate([
-        {
-          $match: {
-            name: { $regex: searchValue, $options: "i" },
-          },
-        },
-        {
-          $project: {
-            name: 1,
-            image: 1,
-            slug: 1,
-            _id: 1,
-            type: "subcategory",
+            type: { $literal: "category" },
+            keyName: "$_id",
           },
         },
         { $limit: 10 },
       ]);
 
-      const result = await productModel.aggregate([
+      // Search subcategories
+      const subcategories = await subCategory.aggregate([
+        {
+          $match: {
+            name: { $regex: searchValue, $options: "i" },
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            slug: 1,
+            image: 1,
+            categoryName: 1,
+            type: { $literal: "subcategory" },
+            keyName: "$_id",
+          },
+        },
+        { $limit: 10 },
+      ]);
+
+      // Search products
+      const products = await productModel.aggregate([
         {
           $match: {
             $or: [
               { name: { $regex: searchValue, $options: "i" } },
-              { category: { $regex: searchValue, $options: "i" } },
-              { subcategory: { $regex: searchValue, $options: "i" } },
               { brand: { $regex: searchValue, $options: "i" } },
               { description: { $regex: searchValue, $options: "i" } },
               { shopName: { $regex: searchValue, $options: "i" } },
@@ -953,90 +959,257 @@ class homeControllers {
           },
         },
         {
-          $project: {
-            name: 1,
-            slug: 1,
-            shopName: 1,
-            brand: 1,
-            slug: 1,
-            price: 1,
-            type: "product",
-            discount: 1,
-            discountedPrice: 1,
-            rating: 1,
-            returnPolicy: 1,
-            free_delivery: 1,
-            images: { $arrayElemAt: ["$images", 0] },
+          $lookup: {
+            from: "subcategories",
+            localField: "subcategory",
+            foreignField: "_id",
+            as: "subcategoryDetails",
           },
         },
-        { $limit: 30 }, // Limit the number of results to 30
+        {
+          $unwind: {
+            path: "$subcategoryDetails",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $group: {
+            _id: "$subcategoryDetails.productType",
+            name: { $first: "$subcategoryDetails.name" },
+            slug: { $first: "$subcategoryDetails.slug" },
+            image: { $first: "$subcategoryDetails.image" },
+            category: { $first: "$subcategoryDetails.categoryName" },
+            categoryId: { $first: "$subcategoryDetails.categoryId" },
+            subcategoryId: { $first: "$subcategoryDetails._id" },
+            type: { $first: "brand" },
+            keyName: { $first: "$brand" },
+          },
+        },
+        { $limit: 30 },
       ]);
-      const query = search; // The search term
 
-      const image = result[0].images; // The image associated with the search (can be `null` or `undefined` if not provided)
-      console.log(image);
+      // If only products found, add brands as a separate type
+      let finalData = [];
+
+      if (categories.length === 0 && subcategories.length === 0) {
+        const brands = await productModel.aggregate([
+          {
+            $match: {
+              $or: [
+                { name: { $regex: searchValue, $options: "i" } },
+                { brand: { $regex: searchValue, $options: "i" } },
+                { description: { $regex: searchValue, $options: "i" } },
+                { shopName: { $regex: searchValue, $options: "i" } },
+              ],
+            },
+          },
+
+          { $limit: 10 },
+        ]);
+
+        finalData = [...products];
+      } else {
+        finalData = [...categories, ...subcategories, ...products];
+      }
+
+      // Save recent search
       const userId = req.id;
-      console.log(req.id);
-      if (userId && query) {
+      if (userId && search) {
         try {
-          // Find the recent searches for the user
-
-          console.log("saving the search result");
           let RecentSearch = await recentSearch.findOne({ userId });
-
           if (!RecentSearch) {
-            // If the user doesn't have a recent search, create a new record
             RecentSearch = new recentSearch({
               userId,
-              searches: [{ searchTerm: query, image: image || null }],
+              searches: [
+                { searchTerm: search, image: products[0]?.images || null },
+              ],
             });
           } else {
-            // Check if the query already exists in the searches array
-            const existingSearchIndex = RecentSearch.searches.findIndex(
-              (item) => item.searchTerm === query
+            const existingIndex = RecentSearch.searches.findIndex(
+              (item) => item.searchTerm === search
             );
-
-            if (existingSearchIndex === -1) {
-              // Add the new query with image to the beginning of the array
+            if (existingIndex === -1) {
               RecentSearch.searches.unshift({
-                searchTerm: query,
-                image: image || null,
+                searchTerm: search,
+                image: products[0]?.images || null,
               });
-
-              // Limit the array to the latest 10 searches
               if (RecentSearch.searches.length > 10) {
                 RecentSearch.searches.pop();
               }
             } else {
-              // Optional: Move the existing query to the front if it already exists
-              const existingSearch = RecentSearch.searches.splice(
-                existingSearchIndex,
+              const existing = RecentSearch.searches.splice(
+                existingIndex,
                 1
               )[0];
-              RecentSearch.searches.unshift(existingSearch);
+              RecentSearch.searches.unshift(existing);
             }
           }
-
-          // Save the updated recent searches
           await RecentSearch.save();
         } catch (error) {
           console.error("Error saving recent search:", error.message);
         }
       }
 
+      // Send response
       responseReturn(res, 200, {
         message: "Data fetched successfully.",
-        data: [...categorys, ...subcategorys, ...result],
+        data: finalData,
         status: 200,
       });
     } catch (error) {
-      console.error("Error in suggestSearch:", error);
+      console.error("Error in searchProducts:", error);
       responseReturn(res, 500, {
         message: "An error occurred while fetching the data.",
         status: 500,
       });
     }
   };
+
+  // searchProducts = async (req, res) => {
+  //   try {
+  //     const { search } = req.params;
+
+  //     if (!search) {
+  //       return responseReturn(res, 400, {
+  //         message: "Please enter a search value.",
+  //         status: 400,
+  //       });
+  //     }
+
+  //     const searchValue = search.toLowerCase();
+  //     const categorys = await categoryModel.aggregate([
+  //       {
+  //         $match: {
+  //           name: { $regex: searchValue, $options: "i" },
+  //         },
+  //       },
+  //       {
+  //         $project: {
+  //           name: 1,
+  //           slug: 1,
+  //           image: 1,
+  //           _id: 1,
+  //           type: "category",
+  //         },
+  //       },
+  //       { $limit: 10 },
+  //     ]);
+  //     const subcategorys = await subCategory.aggregate([
+  //       {
+  //         $match: {
+  //           name: { $regex: searchValue, $options: "i" },
+  //         },
+  //       },
+  //       {
+  //         $project: {
+  //           name: 1,
+  //           image: 1,
+  //           slug: 1,
+  //           _id: 1,
+  //           type: "subcategory",
+  //         },
+  //       },
+  //       { $limit: 10 },
+  //     ]);
+
+  //     const result = await productModel.aggregate([
+  //       {
+  //         $match: {
+  //           $or: [
+  //             { name: { $regex: searchValue, $options: "i" } },
+  //             { category: { $regex: searchValue, $options: "i" } },
+  //             { subcategory: { $regex: searchValue, $options: "i" } },
+  //             { brand: { $regex: searchValue, $options: "i" } },
+  //             { description: { $regex: searchValue, $options: "i" } },
+  //             { shopName: { $regex: searchValue, $options: "i" } },
+  //           ],
+  //         },
+  //       },
+  //       {
+  //         $project: {
+  //           name: 1,
+  //           slug: 1,
+  //           shopName: 1,
+  //           brand: 1,
+  //           slug: 1,
+  //           price: 1,
+  //           type: "product",
+  //           discount: 1,
+  //           discountedPrice: 1,
+  //           rating: 1,
+  //           returnPolicy: 1,
+  //           free_delivery: 1,
+  //           images: { $arrayElemAt: ["$images", 0] },
+  //         },
+  //       },
+  //       { $limit: 30 }, // Limit the number of results to 30
+  //     ]);
+  //     const query = search; // The search term
+
+  //     const image = result[0].images; // The image associated with the search (can be `null` or `undefined` if not provided)
+  //     console.log(image);
+  //     const userId = req.id;
+  //     console.log(req.id);
+  //     if (userId && query) {
+  //       try {
+  //         // Find the recent searches for the user
+
+  //         console.log("saving the search result");
+  //         let RecentSearch = await recentSearch.findOne({ userId });
+
+  //         if (!RecentSearch) {
+  //           // If the user doesn't have a recent search, create a new record
+  //           RecentSearch = new recentSearch({
+  //             userId,
+  //             searches: [{ searchTerm: query, image: image || null }],
+  //           });
+  //         } else {
+  //           // Check if the query already exists in the searches array
+  //           const existingSearchIndex = RecentSearch.searches.findIndex(
+  //             (item) => item.searchTerm === query
+  //           );
+
+  //           if (existingSearchIndex === -1) {
+  //             // Add the new query with image to the beginning of the array
+  //             RecentSearch.searches.unshift({
+  //               searchTerm: query,
+  //               image: image || null,
+  //             });
+
+  //             // Limit the array to the latest 10 searches
+  //             if (RecentSearch.searches.length > 10) {
+  //               RecentSearch.searches.pop();
+  //             }
+  //           } else {
+  //             // Optional: Move the existing query to the front if it already exists
+  //             const existingSearch = RecentSearch.searches.splice(
+  //               existingSearchIndex,
+  //               1
+  //             )[0];
+  //             RecentSearch.searches.unshift(existingSearch);
+  //           }
+  //         }
+
+  //         // Save the updated recent searches
+  //         await RecentSearch.save();
+  //       } catch (error) {
+  //         console.error("Error saving recent search:", error.message);
+  //       }
+  //     }
+
+  //     responseReturn(res, 200, {
+  //       message: "Data fetched successfully.",
+  //       data: [...categorys, ...subcategorys, ...result],
+  //       status: 200,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in suggestSearch:", error);
+  //     responseReturn(res, 500, {
+  //       message: "An error occurred while fetching the data.",
+  //       status: 500,
+  //     });
+  //   }
+  // };
 
   suggestSearch = async (req, res) => {
     try {
