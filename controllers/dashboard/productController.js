@@ -1361,7 +1361,7 @@ class productController {
 
       // Step 3: Build final filter object
       const data = {
-        rating: ["all", 1, 2, 3, 4, 5], // Static rating values
+        rating: [1, 2, 3, 4, 5], // Static rating values
       };
 
       for (const field of fieldLabels) {
@@ -1379,10 +1379,10 @@ class productController {
             buckets.push("500+");
           }
 
-          data.price = ["all", ...buckets];
+          data.price = [...buckets];
         } else {
           // All other dynamic fields
-          data[field] = ["all", ...(resultData[field] || [])];
+          data[field] = [...(resultData[field] || [])];
         }
       }
 
@@ -1461,122 +1461,27 @@ class productController {
 
       const mongoQuery = andConditions.length ? { $and: andConditions } : {};
 
-      const filterOptionDoc = await filteroptionModel
-        .findById(productType)
-        .select("options productType");
-
-      const dynamicFields = filterOptionDoc?.options || [];
-
-      const productDetails = await productModel
-        .find(mongoQuery)
-        .populate({
-          path: "variations",
-          model: "variants",
-        })
-        .populate("category", "name")
-        .populate("subcategory", "name")
-        .lean();
-
-      const staticFields = [
-        "_id",
-        "productId",
-        "sellerId",
-        "name",
-        "slug",
-        "category",
-        "subcategory",
-        "brand",
-        "price",
-        "discount",
-        "discountedPrice",
-        "stock",
-        "featured",
-        "description",
-        "shopName",
-        "images",
-        "rating",
-        "sponsors",
-        "free_delivery",
-        "returnPolicy",
-        "type",
-        "colorCode",
-        "color",
-        "views",
-        "ram",
-        "storage",
-        "size",
-      ];
-
-      const finalResult = productDetails.map((product) => {
-        const result = {};
-
-        // Static fields
-        staticFields.forEach((field) => {
-          if (field === "category" && product.category) {
-            result["category"] = product.category._id;
-            result["categoryName"] = product.category.name;
-          } else if (field === "subcategory" && product.subcategory) {
-            result["subcategory"] = product.subcategory._id;
-            result["subcategoryName"] = product.subcategory.name;
-          } else {
-            result[field] = product[field];
-          }
-        });
-
-        // Dynamic fields (grouped section-wise)
-        const groupedDynamicFields = {};
-        dynamicFields.forEach(({ label, section }) => {
-          if (!groupedDynamicFields[section]) {
-            groupedDynamicFields[section] = {};
-          }
-          if (product[label] !== undefined) {
-            groupedDynamicFields[section][label] = product[label];
-          }
-        });
-
-        result.specification = groupedDynamicFields;
-
-        // Variations (grouped section-wise)
-        result.variations = (product.variations || []).map((variant) => {
-          const variantObj = {};
-
-          // Static fields in variant
-          staticFields.forEach((field) => {
-            if (field === "category" && variant.category) {
-              variantObj["category"] = variant.category._id;
-              variantObj["categoryName"] = variant.category.name;
-            } else if (field === "subcategory" && variant.subcategory) {
-              variantObj["subcategory"] = variant.subcategory._id;
-              variantObj["subcategoryName"] = variant.subcategory.name;
-            } else {
-              variantObj[field] = variant[field];
-            }
-          });
-
-          // Dynamic fields in variant
-          const variantDynamicFields = {};
-          dynamicFields.forEach(({ label, section }) => {
-            if (!variantDynamicFields[section]) {
-              variantDynamicFields[section] = {};
-            }
-            if (variant[label] !== undefined) {
-              variantDynamicFields[section][label] = variant[label];
-            }
-          });
-
-          variantObj.specification = variantDynamicFields;
-
-          return variantObj;
-        });
-
-        return result;
+      const products = await productModel.find(mongoQuery, {
+        slug: 1,
+        brand: 1,
+        price: 1,
+        stock: 1,
+        discount: 1,
+        name: 1,
+        type: 1,
+        discountedPrice: 1,
+        subcategory: 1,
+        category: 1,
+        images: 1,
+        ram: 1,
+        storage: 1,
+        size: 1,
+        _id: 1,
       });
 
       return responseReturn(res, 200, {
         message: "Product details retrieved successfully",
-        data: {
-          productDetails: finalResult,
-        },
+        data: products,
         status: 200,
       });
     } catch (error) {
