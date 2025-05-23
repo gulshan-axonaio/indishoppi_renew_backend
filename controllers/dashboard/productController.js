@@ -1,6 +1,6 @@
 const formidable = require("formidable");
 
-// test 
+// test
 const cloudinary = require("cloudinary").v2;
 const mongoose = require("mongoose");
 const { responseReturn } = require("../../utiles/response");
@@ -25,25 +25,39 @@ class productController {
 
     try {
       const fields = await filteroptionModel.find({});
-      let allOptions = [];
+      let allLabels = [];
 
       fields.forEach((field) => {
-        if (field.options && field.options.length > 0) {
+        if (Array.isArray(field.options)) {
           const labels = field.options.map((opt) => opt.label);
-          allOptions = [...allOptions, ...labels];
+          allLabels.push(...labels);
         }
       });
 
-      const uniqueOptions = [...new Set(allOptions)];
+      const uniqueOptions = [...new Set(allLabels)];
 
-      let dynamicFields = {};
+      const dynamicFields = {};
+
       uniqueOptions.forEach((fieldName) => {
-        if (chek[fieldName] !== undefined) {
-          dynamicFields[fieldName] = chek[fieldName];
+        const fieldValue = chek[fieldName];
+
+        if (fieldValue !== undefined) {
+          if (
+            typeof fieldValue === "object" &&
+            fieldValue !== null &&
+            "label" in fieldValue
+          ) {
+            dynamicFields[fieldName] = fieldValue.label;
+          } else if (
+            typeof fieldValue === "string" ||
+            typeof fieldValue === "number"
+          ) {
+            dynamicFields[fieldName] = fieldValue;
+          }
         }
       });
 
-      // Destructure static fields
+      // Step 3: Extract and validate static fields
       let {
         type,
         name,
@@ -62,7 +76,6 @@ class productController {
         colorCode,
       } = req.body;
 
-      // Validation
       if (
         !name ||
         !category ||
@@ -76,20 +89,21 @@ class productController {
           message: "please provide details correctly",
         });
       }
+
       if (!imageUrls || imageUrls.length === 0) {
         return responseReturn(res, 400, {
           message: "At least one image is required",
         });
       }
 
-      // Create slug
+      // Step 4: Create slug
       name = name.trim();
       const slug = name
         .toLowerCase()
         .replace(/[^a-z0-9\s]/g, "")
         .replace(/\s+/g, "-");
 
-      // Create product
+      // Step 5: Create product
       const product = await productModel.create({
         sellerId: id,
         name,
@@ -111,7 +125,7 @@ class productController {
         ...dynamicFields,
       });
 
-      // Create product detail entry
+      // Step 6: Create variant (Product Detail)
       const variant = await ProductDetailsModel.create({
         sellerId: id,
         productId: product._id,
@@ -122,34 +136,30 @@ class productController {
         subcategory,
         category,
         description: description.trim(),
+        stock,
         price: parseInt(price),
         discount: parseInt(discount),
         discountedPrice,
-        stock,
+        brand: brand.trim(),
+        images: imageUrls,
         color,
         colorCode,
         free_delivery,
-        brand: brand.trim(),
-        images: imageUrls,
         ...dynamicFields,
       });
 
-      // Push variant ID to productModel
+      // Step 7: Push variant ID to product
       if (variant) {
-        await productModel.findOneAndUpdate(
-          { _id: product._id },
-          {
-            $addToSet: {
-              variations: variant._id,
-            },
-          },
+        await productModel.findByIdAndUpdate(
+          product._id,
+          { $addToSet: { variations: variant._id } },
           { new: true }
         );
       }
 
       responseReturn(res, 201, { message: "product added successfully" });
     } catch (error) {
-      console.log(error, "error");
+      console.error("Add product error:", error);
       responseReturn(res, 500, { error: error.message });
     }
   };
@@ -375,21 +385,35 @@ class productController {
     const chek = req.body;
 
     const fields = await filteroptionModel.find({});
-    let allOptions = [];
+    let allLabels = [];
 
     fields.forEach((field) => {
-      if (field.options && field.options.length > 0) {
-        const labels = field.options.map((opt) => opt.label); // label nikaalo
-        allOptions = [...allOptions, ...labels];
+      if (Array.isArray(field.options)) {
+        const labels = field.options.map((opt) => opt.label);
+        allLabels.push(...labels);
       }
     });
 
-    const uniqueOptions = [...new Set(allOptions)];
+    const uniqueOptions = [...new Set(allLabels)];
 
-    let dynamicFields = {};
+    const dynamicFields = {};
+
     uniqueOptions.forEach((fieldName) => {
-      if (chek[fieldName] !== undefined) {
-        dynamicFields[fieldName] = chek[fieldName];
+      const fieldValue = chek[fieldName];
+
+      if (fieldValue !== undefined) {
+        if (
+          typeof fieldValue === "object" &&
+          fieldValue !== null &&
+          "label" in fieldValue
+        ) {
+          dynamicFields[fieldName] = fieldValue.label;
+        } else if (
+          typeof fieldValue === "string" ||
+          typeof fieldValue === "number"
+        ) {
+          dynamicFields[fieldName] = fieldValue;
+        }
       }
     });
 
@@ -529,21 +553,35 @@ class productController {
     const chek = req.body;
 
     const fields = await filteroptionModel.find({});
-    let allOptions = [];
+    let allLabels = [];
 
     fields.forEach((field) => {
-      if (field.options && field.options.length > 0) {
+      if (Array.isArray(field.options)) {
         const labels = field.options.map((opt) => opt.label);
-        allOptions = [...allOptions, ...labels];
+        allLabels.push(...labels);
       }
     });
 
-    const uniqueOptions = [...new Set(allOptions)];
+    const uniqueOptions = [...new Set(allLabels)];
 
-    let dynamicFields = {};
+    const dynamicFields = {};
+
     uniqueOptions.forEach((fieldName) => {
-      if (chek[fieldName] !== undefined) {
-        dynamicFields[fieldName] = chek[fieldName];
+      const fieldValue = chek[fieldName];
+
+      if (fieldValue !== undefined) {
+        if (
+          typeof fieldValue === "object" &&
+          fieldValue !== null &&
+          "label" in fieldValue
+        ) {
+          dynamicFields[fieldName] = fieldValue.label;
+        } else if (
+          typeof fieldValue === "string" ||
+          typeof fieldValue === "number"
+        ) {
+          dynamicFields[fieldName] = fieldValue;
+        }
       }
     });
 
@@ -748,18 +786,35 @@ class productController {
 
     try {
       const fields = await filteroptionModel.find({});
-      let allOptions = [];
+      let allLabels = [];
+
       fields.forEach((field) => {
-        if (field.options && field.options.length > 0) {
-          allOptions = [...allOptions, ...field.options];
+        if (Array.isArray(field.options)) {
+          const labels = field.options.map((opt) => opt.label);
+          allLabels.push(...labels);
         }
       });
-      const uniqueOptions = [...new Set(allOptions)];
 
-      let dynamicFields = {};
+      const uniqueOptions = [...new Set(allLabels)];
+
+      const dynamicFields = {};
+
       uniqueOptions.forEach((fieldName) => {
-        if (chek[fieldName] !== undefined) {
-          dynamicFields[fieldName] = chek[fieldName];
+        const fieldValue = chek[fieldName];
+
+        if (fieldValue !== undefined) {
+          if (
+            typeof fieldValue === "object" &&
+            fieldValue !== null &&
+            "label" in fieldValue
+          ) {
+            dynamicFields[fieldName] = fieldValue.label;
+          } else if (
+            typeof fieldValue === "string" ||
+            typeof fieldValue === "number"
+          ) {
+            dynamicFields[fieldName] = fieldValue;
+          }
         }
       });
 

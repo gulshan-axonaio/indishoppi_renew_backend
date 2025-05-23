@@ -30,19 +30,20 @@ async function createDynamicProductSchema() {
 
   // Get unique options from filteroptionModel
   const fields = await filteroptionModel.find({});
-  let allOptions = [];
+  const allOptions = [];
 
   fields.forEach((field) => {
     if (field.options && field.options.length > 0) {
-      allOptions = [...allOptions, ...field.options];
+      const labels = field.options.map((opt) => opt.label);
+      allOptions.push(...labels);
     }
   });
 
   const uniqueOptions = [...new Set(allOptions)];
 
-  uniqueOptions.forEach((option) => {
-    if (!baseSchemaDefinition.hasOwnProperty(option)) {
-      baseSchemaDefinition[option] = { type: String, default: "" };
+  uniqueOptions.forEach((label) => {
+    if (!baseSchemaDefinition.hasOwnProperty(label)) {
+      baseSchemaDefinition[label] = { type: String, default: "" };
     }
   });
 

@@ -67,18 +67,18 @@ async function createDynamicVariantSchema() {
 
   fields.forEach((field) => {
     if (field.options && field.options.length > 0) {
-      allOptions = [...allOptions, ...field.options];
+      const labels = field.options.map((opt) => opt.label);
+      allOptions.push(...labels);
     }
   });
 
   const uniqueOptions = [...new Set(allOptions)];
 
   // Add dynamic fields
-  uniqueOptions.forEach((option) => {
-    baseSchemaDefinition[option] = {
-      type: String,
-      default: "",
-    };
+  uniqueOptions.forEach((label) => {
+    if (!baseSchemaDefinition.hasOwnProperty(label)) {
+      baseSchemaDefinition[label] = { type: String, default: "" };
+    }
   });
 
   const variantSchema = new Schema(baseSchemaDefinition, { timestamps: true });
