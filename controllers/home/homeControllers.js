@@ -1079,6 +1079,9 @@ class homeControllers {
       }
 
       const searchValue = search.toLowerCase();
+      const searchKeywords = searchValue.split(" ").filter(Boolean); // ["redmi", "note", "13"]
+
+      // Category search
       const categorys = await categoryModel.aggregate([
         {
           $match: {
@@ -1096,6 +1099,8 @@ class homeControllers {
         },
         { $limit: 10 },
       ]);
+
+      // Subcategory search
       const subcategorys = await subCategory.aggregate([
         {
           $match: {
@@ -1114,17 +1119,21 @@ class homeControllers {
         { $limit: 10 },
       ]);
 
+      // Build dynamic search conditions from split words
+      const regexConditions = searchKeywords.map((word) => ({
+        $or: [
+          { name: { $regex: word, $options: "i" } },
+          { brand: { $regex: word, $options: "i" } },
+          { description: { $regex: word, $options: "i" } },
+          { shopName: { $regex: word, $options: "i" } },
+        ],
+      }));
+
+      // Product search
       const result = await productModel.aggregate([
         {
           $match: {
-            $or: [
-              { name: { $regex: searchValue, $options: "i" } },
-              // { category: { $regex: searchValue, $options: "i" } },
-              // { subcategory: { $regex: searchValue, $options: "i" } },
-              { brand: { $regex: searchValue, $options: "i" } },
-              // { description: { $regex: searchValue, $options: "i" } },
-              { shopName: { $regex: searchValue, $options: "i" } },
-            ],
+            $and: regexConditions,
           },
         },
         {
@@ -1133,7 +1142,6 @@ class homeControllers {
             slug: 1,
             shopName: 1,
             brand: 1,
-            slug: 1,
             price: 1,
             type: "product",
             discount: 1,
@@ -1144,34 +1152,29 @@ class homeControllers {
             images: { $arrayElemAt: ["$images", 0] },
           },
         },
-        { $limit: 30 }, // Limit the number of results to 30
+        { $limit: 30 },
       ]);
-      const query = search; // The search term
 
-      const image = result[0].images; // The image associated with the search (can be `null` or `undefined` if not provided)
-      console.log(image);
+      const image = result[0]?.images;
       const userId = req.id;
-      console.log(req.id);
-      if (userId && query) {
-        try {
-          // Find the recent searches for the user
 
-          console.log("saving the search result");
+      if (userId && search) {
+        try {
           let RecentSearch = await recentSearch.findOne({ userId });
 
           if (!RecentSearch) {
             RecentSearch = new recentSearch({
               userId,
-              searches: [{ searchTerm: query, image: image || null }],
+              searches: [{ searchTerm: search, image: image || null }],
             });
           } else {
             const existingSearchIndex = RecentSearch.searches.findIndex(
-              (item) => item.searchTerm === query
+              (item) => item.searchTerm === search
             );
 
             if (existingSearchIndex === -1) {
               RecentSearch.searches.unshift({
-                searchTerm: query,
+                searchTerm: search,
                 image: image || null,
               });
 
