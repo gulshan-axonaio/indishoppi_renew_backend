@@ -488,6 +488,10 @@ class productController {
         { new: true }
       );
 
+      // console.log("updated", updated);
+
+      // return;
+
       const updatedProduct = await productModel.findById(productId);
 
       if (updatedProduct.variations && updatedProduct.variations.length > 0) {

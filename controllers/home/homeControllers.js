@@ -851,31 +851,84 @@ class homeControllers {
   };
   fetchBySubcat = async (req, res) => {
     try {
-      const { type, subcategoryId, categoryId } = req.body;
+      const {
+        type,
+        subcategoryId,
+        categoryId,
+        keytype = "",
+        keyvalue = "",
+      } = req.body;
+
+      let products;
 
       console.log("check", { type, subcategoryId, categoryId });
 
-      const products = await productModel.find(
-        {
-          category: new mongoose.Types.ObjectId(categoryId),
-          subcategory: new mongoose.Types.ObjectId(subcategoryId),
-          type: new mongoose.Types.ObjectId(type),
-        },
-        {
-          slug: 1,
-          brand: 1,
-          price: 1,
-          stock: 1,
-          discount: 1,
-          name: 1,
-          type: 1,
-          discountedPrice: 1,
-          subcategory: 1,
-          category: 1,
-          images: 1,
-          _id: 1,
-        }
-      );
+      if (keytype && keytype === "category") {
+        products = await productModel.find(
+          {
+            category: new mongoose.Types.ObjectId(categoryId),
+          },
+          {
+            slug: 1,
+            brand: 1,
+            price: 1,
+            stock: 1,
+            discount: 1,
+            name: 1,
+            type: 1,
+            discountedPrice: 1,
+            subcategory: 1,
+            category: 1,
+            images: 1,
+            _id: 1,
+          }
+        );
+      } else if (keytype && keytype === "brand" && keyvalue) {
+        products = await productModel.find(
+          {
+            // category: new mongoose.Types.ObjectId(categoryId),
+            // subcategory: new mongoose.Types.ObjectId(subcategoryId),
+            // type: new mongoose.Types.ObjectId(type),
+            brand: keyvalue,
+          },
+          {
+            slug: 1,
+            brand: 1,
+            price: 1,
+            stock: 1,
+            discount: 1,
+            name: 1,
+            type: 1,
+            discountedPrice: 1,
+            subcategory: 1,
+            category: 1,
+            images: 1,
+            _id: 1,
+          }
+        );
+      } else {
+        products = await productModel.find(
+          {
+            category: new mongoose.Types.ObjectId(categoryId),
+            subcategory: new mongoose.Types.ObjectId(subcategoryId),
+            type: new mongoose.Types.ObjectId(type),
+          },
+          {
+            slug: 1,
+            brand: 1,
+            price: 1,
+            stock: 1,
+            discount: 1,
+            name: 1,
+            type: 1,
+            discountedPrice: 1,
+            subcategory: 1,
+            category: 1,
+            images: 1,
+            _id: 1,
+          }
+        );
+      }
 
       responseReturn(res, 200, {
         message: "products fetched successfully",
@@ -1067,7 +1120,7 @@ class homeControllers {
 
   // new ----
 
-  searchProducts = async (req, res) => {
+  searchProducts2 = async (req, res) => {
     try {
       const { search } = req.params;
 
@@ -1205,6 +1258,431 @@ class homeControllers {
       console.error("Error in suggestSearch:", error);
       responseReturn(res, 500, {
         message: "An error occurred while fetching the data.",
+        status: 500,
+      });
+    }
+  };
+
+  searchProducts = async (req, res) => {
+    try {
+      const { search } = req.params;
+      const userId = req.id;
+
+      if (!search) {
+        return responseReturn(res, 400, {
+          message: "Please enter a search value.",
+          status: 400,
+        });
+      }
+
+      const searchValue = search.toLowerCase();
+      const searchKeywords = searchValue.split(" ").filter(Boolean);
+
+      const wordRegex = `\\b${searchValue}\\b`;
+      const keywordRegexes = searchKeywords.map(
+        (kw) => new RegExp(`\\b${kw}\\b`, "i")
+      );
+
+      // 🔎 Product name / brand match
+      const searchSuggestions = await productModel.aggregate([
+        {
+          $match: {
+            $or: [
+              { name: { $regex: wordRegex, $options: "i" } },
+              { brand: { $regex: wordRegex, $options: "i" } },
+            ],
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            brand: 1,
+            categoryId: "$category",
+            subcategoryId: "$subcategory",
+            type: 1,
+            gender: 1,
+            image: 1,
+            keytype: "suggestion",
+          },
+        },
+        { $limit: 10 },
+      ]);
+
+      // 🧠 Unique suggestions
+      const suggestionsSet = new Set();
+      const suggestions = [];
+
+      for (const item of searchSuggestions) {
+        if (item.name && !suggestionsSet.has(item.name)) {
+          suggestions.push({
+            productId: item._id,
+            name: item.name,
+            categoryId: item.categoryId,
+            subcategoryId: item.subcategoryId,
+            type: item.type,
+            keytype: "product",
+          });
+          suggestionsSet.add(item.name);
+        }
+        if (item.brand && !suggestionsSet.has(item.brand)) {
+          suggestions.push({
+            name: item.brand,
+            categoryId: item.categoryId,
+            subcategoryId: item.subcategoryId,
+            type: item.type,
+            keytype: "brand",
+          });
+          suggestionsSet.add(item.brand);
+        }
+      }
+
+      // 🧑‍🤝‍🧑 Gender based suggestions (for clothing terms)
+      const genderSuggestions = [];
+      const genderTerms = ["Men", "Women"];
+      const clothKeywords = [
+        "shirt",
+        "jeans",
+        "cloth",
+        "tshirt",
+        "kurta",
+        "trouser",
+      ];
+
+      if (clothKeywords.some((kw) => searchValue.includes(kw))) {
+        genderTerms.forEach((gender) => {
+          genderSuggestions.push({
+            name: `${searchValue} for ${gender.toLowerCase()}`,
+            keytype: "gender",
+          });
+        });
+      }
+
+      // 📁 Category suggestions
+      const categorySuggestions = await categoryModel.aggregate([
+        {
+          $match: {
+            $or: [
+              { name: { $regex: wordRegex, $options: "i" } },
+              {
+                $and: searchKeywords.map((keyword) => ({
+                  name: { $regex: `\\b${keyword}\\b`, $options: "i" },
+                })),
+              },
+            ],
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            image: 1,
+            categoryId: "$_id",
+            keytype: "category",
+          },
+        },
+        { $limit: 5 },
+      ]);
+
+      // 📂 Subcategory suggestions
+      const subcategorySuggestions = await subCategory.aggregate([
+        {
+          $match: {
+            $or: [
+              { name: { $regex: wordRegex, $options: "i" } },
+              {
+                $and: searchKeywords.map((keyword) => ({
+                  name: { $regex: `\\b${keyword}\\b`, $options: "i" },
+                })),
+              },
+            ],
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            image: 1,
+            categoryId: 1,
+            subcategoryId: "$_id",
+            type: "$productType",
+            keytype: "subcategory",
+          },
+        },
+        { $limit: 10 },
+      ]);
+
+      // 🕓 Recent searches
+      let recent = [];
+      if (userId) {
+        const existing = await recentSearch.findOne({ userId });
+        if (existing) {
+          recent = existing.searches.map((s) => ({
+            name: s.searchTerm,
+            image: s.image,
+            keytype: "recent",
+          }));
+        }
+      }
+
+      // 💾 Save recent search
+      const image = searchSuggestions[0]?.image || null;
+      if (userId && search) {
+        try {
+          let recentDoc = await recentSearch.findOne({ userId });
+          if (!recentDoc) {
+            recentDoc = new recentSearch({
+              userId,
+              searches: [{ searchTerm: search, image }],
+            });
+          } else {
+            const index = recentDoc.searches.findIndex(
+              (item) => item.searchTerm === search
+            );
+
+            if (index === -1) {
+              recentDoc.searches.unshift({ searchTerm: search, image });
+              if (recentDoc.searches.length > 10) recentDoc.searches.pop();
+            } else {
+              const existing = recentDoc.searches.splice(index, 1)[0];
+              recentDoc.searches.unshift(existing);
+            }
+          }
+
+          await recentDoc.save();
+        } catch (error) {
+          console.error("Error saving recent search:", error.message);
+        }
+      }
+
+      // ✅ Final Response
+      responseReturn(res, 200, {
+        message: "Search suggestions fetched successfully.",
+        status: 200,
+        data: {
+          suggestions: [...genderSuggestions, ...suggestions],
+          categories: categorySuggestions,
+          subcategories: subcategorySuggestions,
+          recent,
+        },
+      });
+    } catch (error) {
+      console.error("Error in suggestSearch:", error);
+      responseReturn(res, 500, {
+        message: "An error occurred while fetching suggestions.",
+        status: 500,
+      });
+    }
+  };
+
+  searchProducts3 = async (req, res) => {
+    try {
+      const { search } = req.params;
+      const userId = req.id;
+
+      if (!search) {
+        return responseReturn(res, 400, {
+          message: "Please enter a search value.",
+          status: 400,
+        });
+      }
+
+      const searchValue = search.toLowerCase();
+      const searchKeywords = searchValue.split(" ").filter(Boolean);
+
+      // Gender detection
+      const genderKeywords = {
+        men: "Men",
+        women: "Women",
+        male: "Men",
+        female: "Women",
+        boys: "Boys",
+        girls: "Girls",
+        kids: "Kids",
+      };
+
+      let genderFilter = null;
+      for (const word of searchKeywords) {
+        if (genderKeywords[word]) {
+          genderFilter = genderKeywords[word];
+          break;
+        }
+      }
+
+      const refinedKeywords = searchKeywords.filter((w) => !genderKeywords[w]);
+
+      // Build dynamic regex search conditions
+      const regexConditions = refinedKeywords.map((word) => ({
+        $or: [
+          { name: { $regex: word, $options: "i" } },
+          { description: { $regex: word, $options: "i" } },
+          { brand: { $regex: word, $options: "i" } },
+          { tags: { $regex: word, $options: "i" } },
+          { category: { $regex: word, $options: "i" } },
+          { subcategory: { $regex: word, $options: "i" } },
+        ],
+      }));
+
+      const productMatchStage = {
+        $and: regexConditions,
+      };
+      if (genderFilter) {
+        productMatchStage.$and.push({ gender: genderFilter });
+      }
+
+      // Search Suggestions from Product Names and Brands
+      const searchSuggestions = await productModel.aggregate([
+        {
+          $match: {
+            $or: [
+              { name: { $regex: searchValue, $options: "i" } },
+              { brand: { $regex: searchValue, $options: "i" } },
+            ],
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            brand: 1,
+            type: "suggestion",
+          },
+        },
+        { $limit: 10 },
+      ]);
+
+      // Unique suggestions (from name or brand)
+      const suggestionsSet = new Set();
+      const suggestions = [];
+      for (const item of searchSuggestions) {
+        if (item.name && !suggestionsSet.has(item.name)) {
+          suggestions.push({
+            productId: item._id,
+            name: item.name,
+            type: "product",
+          });
+          suggestionsSet.add(item.name);
+        }
+        if (item.brand && !suggestionsSet.has(item.brand)) {
+          suggestions.push({ name: item.brand, type: "brand" });
+          suggestionsSet.add(item.brand);
+        }
+      }
+
+      // Category Suggestions
+      const categorySuggestions = await categoryModel.aggregate([
+        {
+          $match: {
+            name: { $regex: searchValue, $options: "i" },
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            image: 1,
+            categoryId: "$_id",
+            type: "category",
+          },
+        },
+        { $limit: 5 },
+      ]);
+
+      // Subcategory Suggestions
+      const subcategorySuggestions = await subCategory.aggregate([
+        {
+          $match: {
+            name: { $regex: searchValue, $options: "i" },
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            slug: 1,
+            image: 1,
+            subcategoryId: "$_id",
+            categoryId: 1,
+            type: "subcategory",
+          },
+        },
+        { $limit: 5 },
+      ]);
+
+      // Recent Searches
+      let recent = [];
+      if (userId) {
+        const existing = await recentSearch.findOne({ userId });
+        if (existing) {
+          recent = existing.searches.map((s) => ({
+            name: s.searchTerm,
+            image: s.image,
+            type: "recent",
+          }));
+        }
+      }
+
+      // Save new recent search
+      const image = searchSuggestions[0]?.image || null;
+      if (userId && search) {
+        try {
+          let recentDoc = await recentSearch.findOne({ userId });
+          if (!recentDoc) {
+            recentDoc = new recentSearch({
+              userId,
+              searches: [{ searchTerm: search, image }],
+            });
+          } else {
+            const index = recentDoc.searches.findIndex(
+              (item) => item.searchTerm === search
+            );
+
+            if (index === -1) {
+              recentDoc.searches.unshift({ searchTerm: search, image });
+              if (recentDoc.searches.length > 10) recentDoc.searches.pop();
+            } else {
+              const existing = recentDoc.searches.splice(index, 1)[0];
+              recentDoc.searches.unshift(existing);
+            }
+          }
+
+          await recentDoc.save();
+        } catch (error) {
+          console.error("Error saving recent search:", error.message);
+        }
+      }
+
+      // Final response
+      responseReturn(res, 200, {
+        message: "Search suggestions fetched successfully.",
+        status: 200,
+        data: {
+          suggestions,
+          categories: categorySuggestions,
+          subcategories: subcategorySuggestions,
+          recent,
+        },
+      });
+    } catch (error) {
+      console.error("Error in suggestSearch:", error);
+      responseReturn(res, 500, {
+        message: "An error occurred while fetching suggestions.",
+        status: 500,
+      });
+    }
+  };
+
+  new_search_result = async (req, res) => {
+    try {
+      const { type, name } = req.body;
+
+      if (type === "brand") {
+      } else if (type === "category") {
+      } else if (type === "subcategory") {
+      } else if (type === "product") {
+      } else if (type === "gender") {
+      }
+    } catch (error) {
+      console.error("Error in suggestSearch:", error);
+      responseReturn(res, 500, {
+        message: "An error occurred while fetching suggestions.",
         status: 500,
       });
     }

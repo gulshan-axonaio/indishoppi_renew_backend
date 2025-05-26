@@ -36,6 +36,8 @@ router.get(
   searchMiddleware,
   homeControllers.searchProducts
 );
+
+router.post("/new_search_result", homeControllers.new_search_result);
 router.get("/product/suggest-search/:search", homeControllers.suggestSearch);
 
 router.get("/allproducts", homeControllers.allProducts);
