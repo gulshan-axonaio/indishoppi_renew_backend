@@ -529,17 +529,18 @@ class cardController {
    *              @WISHLIST
    */
   add_wishlist = async (req, res) => {
-    const { slug } = req.body;
-
+    const { productId } = req.body;
     const userId = req.id;
+
     try {
       const product = await wishlistModel.findOne({
         userId,
-        slug,
+        productId,
       });
       const myProduct = await productModel.findOne({
-        slug,
+        productId,
       });
+
       if (product) {
         responseReturn(res, 200, {
           message: "item Allready added",
@@ -555,10 +556,9 @@ class cardController {
 
         const wishlist = await wishlistModel.create({
           userId: req.id,
-          productId: myProduct._id,
+          productId,
           name: myProduct.name,
-          slug,
-
+          slug: myProduct.slug,
           price: myProduct.price,
           discount: myProduct.discount,
           image: myProduct?.images[0],
