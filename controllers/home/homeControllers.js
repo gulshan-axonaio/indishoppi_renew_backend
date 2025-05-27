@@ -906,6 +906,9 @@ class homeControllers {
             _id: 1,
           }
         );
+      } else if (keytype && keytype === "gender" && keyvalue) {
+        console.log("keytype", keytype);
+        console.log("keyvalue", keyvalue);
       } else {
         products = await productModel.find(
           {
@@ -929,6 +932,8 @@ class homeControllers {
           }
         );
       }
+
+      return;
 
       responseReturn(res, 200, {
         message: "products fetched successfully",
