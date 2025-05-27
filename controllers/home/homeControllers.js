@@ -1318,18 +1318,18 @@ class homeControllers {
       const searchValue = search.toLowerCase();
       const searchKeywords = searchValue.split(" ").filter(Boolean);
 
-      const wordRegex = `\\b${searchValue}\\b`;
+      const wordRegex = new RegExp(`\\b${searchValue}\\b`, "i");
       const keywordRegexes = searchKeywords.map(
         (kw) => new RegExp(`\\b${kw}\\b`, "i")
       );
 
-      // 🔎 Product name / brand match
+      // 🧠 Product name / brand match
       const searchSuggestions = await productModel.aggregate([
         {
           $match: {
             $or: [
-              { name: { $regex: wordRegex, $options: "i" } },
-              { brand: { $regex: wordRegex, $options: "i" } },
+              { name: { $regex: wordRegex } },
+              { brand: { $regex: wordRegex } },
             ],
           },
         },
@@ -1339,44 +1339,46 @@ class homeControllers {
             brand: 1,
             categoryId: "$category",
             subcategoryId: "$subcategory",
+            image: 1,
             type: 1,
             gender: 1,
-            image: 1,
-            keytype: "suggestion",
           },
         },
         { $limit: 10 },
       ]);
 
-      // 🧠 Unique suggestions
       const suggestionsSet = new Set();
       const suggestions = [];
 
       for (const item of searchSuggestions) {
         if (item.name && !suggestionsSet.has(item.name)) {
           suggestions.push({
-            productId: item._id,
             name: item.name,
+            keytype: "product",
+            productId: item._id,
             categoryId: item.categoryId,
             subcategoryId: item.subcategoryId,
             type: item.type,
-            keytype: "product",
+            image: item.image,
           });
           suggestionsSet.add(item.name);
         }
+
         if (item.brand && !suggestionsSet.has(item.brand)) {
           suggestions.push({
             name: item.brand,
-            categoryId: item.categoryId,
-            subcategoryId: item.subcategoryId,
-            type: item.type,
             keytype: "brand",
+            productId: "",
+            categoryId: item.categoryId || "",
+            subcategoryId: item.subcategoryId || "",
+            type: item.type || "",
+            image: item.image || "",
           });
           suggestionsSet.add(item.brand);
         }
       }
 
-      // 🧑‍🤝‍🧑 Gender based suggestions (for clothing terms)
+      // 👕 Gender-based suggestions
       const genderSuggestions = [];
       const genderTerms = ["Men", "Women"];
       const clothKeywords = [
@@ -1393,73 +1395,104 @@ class homeControllers {
           genderSuggestions.push({
             name: `${searchValue} for ${gender.toLowerCase()}`,
             keytype: "gender",
+            productId: "",
+            categoryId: "",
+            subcategoryId: "",
+            type: "",
+            image: "",
           });
         });
       }
 
       // 📁 Category suggestions
-      const categorySuggestions = await categoryModel.aggregate([
-        {
-          $match: {
-            $or: [
-              { name: { $regex: wordRegex, $options: "i" } },
-              {
-                $and: searchKeywords.map((keyword) => ({
-                  name: { $regex: `\\b${keyword}\\b`, $options: "i" },
-                })),
-              },
-            ],
+      const categorySuggestions = await categoryModel
+        .aggregate([
+          {
+            $match: {
+              $or: [
+                { name: { $regex: wordRegex } },
+                {
+                  $and: searchKeywords.map((keyword) => ({
+                    name: { $regex: new RegExp(`\\b${keyword}\\b`, "i") },
+                  })),
+                },
+              ],
+            },
           },
-        },
-        {
-          $project: {
-            name: 1,
-            slug: 1,
-            image: 1,
-            categoryId: "$_id",
+          {
+            $project: {
+              name: 1,
+              slug: 1,
+              image: 1,
+              categoryId: "$_id",
+            },
+          },
+          { $limit: 5 },
+        ])
+        .then((results) =>
+          results.map((item) => ({
+            name: item.name,
             keytype: "category",
-          },
-        },
-        { $limit: 5 },
-      ]);
+            productId: "",
+            categoryId: item.categoryId,
+            subcategoryId: "",
+            type: "",
+            image: item.image || "",
+          }))
+        );
 
       // 📂 Subcategory suggestions
-      const subcategorySuggestions = await subCategory.aggregate([
-        {
-          $match: {
-            $or: [
-              { name: { $regex: wordRegex, $options: "i" } },
-              {
-                $and: searchKeywords.map((keyword) => ({
-                  name: { $regex: `\\b${keyword}\\b`, $options: "i" },
-                })),
-              },
-            ],
+      const subcategorySuggestions = await subCategory
+        .aggregate([
+          {
+            $match: {
+              $or: [
+                { name: { $regex: wordRegex } },
+                {
+                  $and: searchKeywords.map((keyword) => ({
+                    name: { $regex: new RegExp(`\\b${keyword}\\b`, "i") },
+                  })),
+                },
+              ],
+            },
           },
-        },
-        {
-          $project: {
-            name: 1,
-            slug: 1,
-            image: 1,
-            categoryId: 1,
-            subcategoryId: "$_id",
-            type: "$productType",
+          {
+            $project: {
+              name: 1,
+              slug: 1,
+              image: 1,
+              categoryId: 1,
+              subcategoryId: "$_id",
+              type: "$productType",
+            },
+          },
+          { $limit: 10 },
+        ])
+        .then((results) =>
+          results.map((item) => ({
+            name: item.name,
             keytype: "subcategory",
-          },
-        },
-        { $limit: 10 },
-      ]);
+            productId: "",
+            categoryId: item.categoryId || "",
+            subcategoryId: item.subcategoryId || "",
+            type: item.type || "",
+            image: item.image || "",
+          }))
+        );
 
       // 🕓 Recent searches
-      let recent = [];
+      let recentSuggestions = [];
       if (userId) {
         const existing = await recentSearch.findOne({ userId });
         if (existing) {
-          recent = existing.searches.map((s) => ({
-            name: s.searchTerm,
-            image: s.image,
+          recentSuggestions = existing.searches.map((s) => ({
+            name: s.searchTerm || "",
             keytype: "recent",
+            productId: "",
+            categoryId: "",
+            subcategoryId: "",
+            type: "",
+            image: s.image || "",
           }));
         }
       }
@@ -1495,16 +1528,19 @@ class homeControllers {
       }
 
       // ✅ Final Response
+      const finalSuggestions = [
+        ...categorySuggestions,
+        ...subcategorySuggestions,
+        ...genderSuggestions,
+        ...suggestions,
+        // ...recentSuggestions,
+      ];
+
       responseReturn(res, 200, {
         message: "Search suggestions fetched successfully.",
         status: 200,
         data: {
-          suggestions: [
-            ...categorySuggestions,
-            ...subcategorySuggestions,
-            ...genderSuggestions,
-            ...suggestions,
-          ],
+          suggestions: finalSuggestions,
         },
       });
     } catch (error) {
