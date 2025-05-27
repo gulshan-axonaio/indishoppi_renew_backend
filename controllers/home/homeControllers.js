@@ -909,6 +909,43 @@ class homeControllers {
       } else if (keytype && keytype === "gender" && keyvalue) {
         console.log("keytype", keytype);
         console.log("keyvalue", keyvalue);
+
+        const gender = keyvalue.toLowerCase().includes("men")
+          ? "men"
+          : keyvalue.toLowerCase().includes("women")
+          ? "women"
+          : null;
+
+        if (!gender) {
+          return responseReturn(res, 400, {
+            message: "Invalid gender keyword in keyvalue",
+            status: 400,
+          });
+        }
+
+        // Filter using gender — adjust the field name as per your schema
+        products = await productModel.find(
+          {
+            gender: gender,
+            // OR if stored in customFields.gender:
+            // "customFields.gender": gender
+          },
+          {
+            gender: 1,
+            slug: 1,
+            brand: 1,
+            price: 1,
+            stock: 1,
+            discount: 1,
+            name: 1,
+            type: 1,
+            discountedPrice: 1,
+            subcategory: 1,
+            category: 1,
+            images: 1,
+            _id: 1,
+          }
+        );
       } else {
         products = await productModel.find(
           {
@@ -932,8 +969,6 @@ class homeControllers {
           }
         );
       }
-
-      return;
 
       responseReturn(res, 200, {
         message: "products fetched successfully",
@@ -1464,10 +1499,12 @@ class homeControllers {
         message: "Search suggestions fetched successfully.",
         status: 200,
         data: {
-          suggestions: [...genderSuggestions, ...suggestions],
-          categories: categorySuggestions,
-          subcategories: subcategorySuggestions,
-          recent,
+          suggestions: [
+            ...categorySuggestions,
+            ...subcategorySuggestions,
+            ...genderSuggestions,
+            ...suggestions,
+          ],
         },
       });
     } catch (error) {
