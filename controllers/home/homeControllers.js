@@ -6,6 +6,7 @@ const reviewModel = require("../../models/reviewModel");
 const customerModel = require("../../models/customerModel");
 const mongoose = require("mongoose");
 const moment = require("moment");
+const Fuse = require("fuse.js");
 const {
   mongo: { ObjectId },
 } = require("mongoose");
@@ -1349,7 +1350,7 @@ class homeControllers {
     }
   };
 
-  searchProducts = async (req, res) => {
+  searchProductsbk = async (req, res) => {
     try {
       const { search } = req.params;
       const userId = req.id;
@@ -1385,12 +1386,12 @@ class homeControllers {
             brand: 1,
             categoryId: "$category",
             subcategoryId: "$subcategory",
-            image: 1,
+            image: { $arrayElemAt: ["$images", 0] },
             type: 1,
             gender: 1,
           },
         },
-        { $limit: 10 },
+        { $limit: 20 },
       ]);
 
       const suggestionsSet = new Set();
@@ -1782,6 +1783,261 @@ class homeControllers {
           categories: categorySuggestions,
           subcategories: subcategorySuggestions,
           recent,
+        },
+      });
+    } catch (error) {
+      console.error("Error in suggestSearch:", error);
+      responseReturn(res, 500, {
+        message: "An error occurred while fetching suggestions.",
+        status: 500,
+      });
+    }
+  };
+
+  c;
+
+  searchProducts = async (req, res) => {
+    try {
+      const { search } = req.params;
+      const userId = req.id;
+
+      if (!search) {
+        return responseReturn(res, 400, {
+          message: "Please enter a search value.",
+          status: 400,
+        });
+      }
+
+      const searchValue = search.toLowerCase();
+
+      // Step 1: MongoDB se zyada products fetch karo bina regex filter ke (limit 100)
+      const productData = await productModel
+        .find(
+          {},
+          {
+            name: 1,
+            brand: 1,
+            category: 1,
+            subcategory: 1,
+            images: 1,
+            type: 1,
+            gender: 1,
+          }
+        )
+        .limit(100);
+
+      // Step 2: Fuse.js ke liye list prepare karo
+      const fuseList = [];
+      productData.forEach((product) => {
+        if (product.name) {
+          fuseList.push({
+            keytype: "product",
+            value: product.name,
+            data: product,
+          });
+        }
+        if (product.brand) {
+          fuseList.push({
+            keytype: "brand",
+            value: product.brand,
+            data: product,
+          });
+        }
+      });
+
+      // Step 3: Fuse.js options aur search
+      const fuse = new Fuse(fuseList, {
+        keys: ["value"],
+        threshold: 0.4, // match strictness adjust kar sakte ho
+        minMatchCharLength: 2,
+      });
+
+      const fuseResults = fuse.search(searchValue, { limit: 20 });
+
+      const suggestionsSet = new Set();
+      const suggestions = [];
+
+      fuseResults.forEach(({ item }) => {
+        if (!suggestionsSet.has(item.value)) {
+          suggestions.push({
+            name: item.value,
+            keytype: item.keytype,
+            productId: item.data._id || "",
+            categoryId: item.data.category || "",
+            subcategoryId: item.data.subcategory || "",
+            type: item.data.type || "",
+            image: item.data.images ? item.data.images[0] : "",
+          });
+          suggestionsSet.add(item.value);
+        }
+      });
+
+      // 👕 Gender-based suggestions
+      const genderSuggestions = [];
+      const genderTerms = ["Men", "Women"];
+      const clothKeywords = [
+        "shirt",
+        "jeans",
+        "cloth",
+        "tshirt",
+        "kurta",
+        "trouser",
+      ];
+
+      if (clothKeywords.some((kw) => searchValue.includes(kw))) {
+        genderTerms.forEach((gender) => {
+          genderSuggestions.push({
+            name: `${searchValue} for ${gender.toLowerCase()}`,
+            keytype: "gender",
+            productId: "",
+            categoryId: "",
+            subcategoryId: "",
+            type: "",
+            image: "",
+          });
+        });
+      }
+
+      // 📁 Category suggestions
+      const searchKeywords = searchValue.split(" ").filter(Boolean);
+      const wordRegex = new RegExp(`\\b${searchValue}\\b`, "i");
+
+      const categorySuggestions = await categoryModel
+        .aggregate([
+          {
+            $match: {
+              $or: [
+                { name: { $regex: wordRegex } },
+                {
+                  $and: searchKeywords.map((keyword) => ({
+                    name: { $regex: new RegExp(`\\b${keyword}\\b`, "i") },
+                  })),
+                },
+              ],
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              slug: 1,
+              image: 1,
+              categoryId: "$_id",
+            },
+          },
+          { $limit: 5 },
+        ])
+        .then((results) =>
+          results.map((item) => ({
+            name: item.name,
+            keytype: "category",
+            productId: "",
+            categoryId: item.categoryId,
+            subcategoryId: "",
+            type: "",
+            image: item.image || "",
+          }))
+        );
+
+      // 📂 Subcategory suggestions
+      const subcategorySuggestions = await subCategory
+        .aggregate([
+          {
+            $match: {
+              $or: [
+                { name: { $regex: wordRegex } },
+                {
+                  $and: searchKeywords.map((keyword) => ({
+                    name: { $regex: new RegExp(`\\b${keyword}\\b`, "i") },
+                  })),
+                },
+              ],
+            },
+          },
+          {
+            $project: {
+              name: 1,
+              slug: 1,
+              image: 1,
+              categoryId: 1,
+              subcategoryId: "$_id",
+              type: "$productType",
+            },
+          },
+          { $limit: 10 },
+        ])
+        .then((results) =>
+          results.map((item) => ({
+            name: item.name,
+            keytype: "subcategory",
+            productId: "",
+            categoryId: item.categoryId || "",
+            subcategoryId: item.subcategoryId || "",
+            type: item.type || "",
+            image: item.image || "",
+          }))
+        );
+
+      // 🕓 Recent searches
+      let recentSuggestions = [];
+      if (userId) {
+        const existing = await recentSearch.findOne({ userId });
+        if (existing) {
+          recentSuggestions = existing.searches.map((s) => ({
+            name: s.searchTerm || "",
+            keytype: "recent",
+            productId: "",
+            categoryId: "",
+            subcategoryId: "",
+            type: "",
+            image: s.image || "",
+          }));
+        }
+      }
+
+      // 💾 Save recent search
+      const image = suggestions[0]?.image || null; // ab Fuse.js suggestions se image le rahe hain
+      if (userId && search) {
+        try {
+          let recentDoc = await recentSearch.findOne({ userId });
+          if (!recentDoc) {
+            recentDoc = new recentSearch({
+              userId,
+              searches: [{ searchTerm: search, image }],
+            });
+          } else {
+            const index = recentDoc.searches.findIndex(
+              (item) => item.searchTerm === search
+            );
+
+            if (index === -1) {
+              recentDoc.searches.unshift({ searchTerm: search, image });
+              if (recentDoc.searches.length > 10) recentDoc.searches.pop();
+            } else {
+              const existing = recentDoc.searches.splice(index, 1)[0];
+              recentDoc.searches.unshift(existing);
+            }
+          }
+
+          await recentDoc.save();
+        } catch (error) {
+          console.error("Error saving recent search:", error.message);
+        }
+      }
+
+      // ✅ Final Response
+      const finalSuggestions = [
+        ...categorySuggestions,
+        ...subcategorySuggestions,
+        ...genderSuggestions,
+        ...suggestions,
+        // ...recentSuggestions, // agar chaho toh recent bhi dikha sakte ho
+      ];
+
+      responseReturn(res, 200, {
+        message: "Search suggestions fetched successfully.",
+        status: 200,
+        data: {
+          suggestions: finalSuggestions,
         },
       });
     } catch (error) {
