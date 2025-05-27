@@ -537,9 +537,7 @@ class cardController {
         userId,
         productId,
       });
-      const myProduct = await productModel.findOne({
-        productId,
-      });
+      const myProduct = await productModel.findById({ _id: productId });
 
       if (product) {
         responseReturn(res, 200, {

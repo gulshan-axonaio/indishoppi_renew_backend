@@ -1,5 +1,6 @@
 const androidCustomerOrderModel = require("../../models/androidCustomerOrderModel.js");
 const CusomerOrderModel = require("../../models/androidCustomerOrderModel.js");
+const customerAddressModel = require("../../models/customerAddressModel.js");
 const testModel = require("../../models/testModel.js");
 const authOrder = require("../../models/authOrder.js");
 const cardModel = require("../../models/cardModel.js");
@@ -28,12 +29,13 @@ class customerOrderController {
         couponCode,
         productId,
         quantity,
-        addressName,
-        addressPhonenumber,
-        addressCity,
-        addressState,
-        addressDistrict,
-        addressArea,
+        addressId,
+        // addressName,
+        // addressPhonenumber,
+        // addressCity,
+        // addressState,
+        // addressDistrict,
+        // addressArea,
         variationId,
         size,
       } = req.body;
@@ -46,16 +48,19 @@ class customerOrderController {
         couponCode,
         productId,
         quantity,
-        addressName,
-        addressPhonenumber,
-        addressCity,
-        addressState,
-        addressDistrict,
-        addressArea,
+        // addressName,
+        // addressPhonenumber,
+        // addressCity,
+        // addressState,
+        // addressDistrict,
+        // addressArea,
         variationId,
         size,
-        sellerIdArray
+        sellerIdArray,
+        addressId
       );
+
+      const customerAddress = await customerAddressModel.findById(addressId);
 
       if (!productId || !quantity || !variationId || !sellerId) {
         return res.status(200).json({
@@ -114,6 +119,7 @@ class customerOrderController {
         const order = await androidCustomerOrderModel.create({
           customerId: req.id,
           orderId: new ObjectId(uniqueOrderId),
+          addressId: new ObjectId(addressId),
           appliedCoupon: couponCode,
           sellerId: sellerIdArray,
           discountedPrice: productPrice - discount,

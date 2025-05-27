@@ -1794,8 +1794,6 @@ class homeControllers {
     }
   };
 
-  c;
-
   searchProducts = async (req, res) => {
     try {
       const { search } = req.params;
@@ -1810,7 +1808,7 @@ class homeControllers {
 
       const searchValue = search.toLowerCase();
 
-      // Step 1: MongoDB se zyada products fetch karo bina regex filter ke (limit 100)
+      // Step 1: Fetch products for Fuse.js
       const productData = await productModel
         .find(
           {},
@@ -1826,7 +1824,7 @@ class homeControllers {
         )
         .limit(100);
 
-      // Step 2: Fuse.js ke liye list prepare karo
+      // Step 2: Prepare list for Fuse
       const fuseList = [];
       productData.forEach((product) => {
         if (product.name) {
@@ -1845,10 +1843,9 @@ class homeControllers {
         }
       });
 
-      // Step 3: Fuse.js options aur search
       const fuse = new Fuse(fuseList, {
         keys: ["value"],
-        threshold: 0.4, // match strictness adjust kar sakte ho
+        threshold: 0.4,
         minMatchCharLength: 2,
       });
 
@@ -1872,7 +1869,7 @@ class homeControllers {
         }
       });
 
-      // 👕 Gender-based suggestions
+      // 👕 Gender-based suggestions (for keywords like "shirt", "jeans" etc.)
       const genderSuggestions = [];
       const genderTerms = ["Men", "Women"];
       const clothKeywords = [
@@ -1893,6 +1890,40 @@ class homeControllers {
             categoryId: "",
             subcategoryId: "",
             type: "",
+            image: "",
+          });
+        });
+      }
+
+      // 🧠 Gender-specific category/subcategory/type suggestions
+      const genderMatch = searchValue.match(/(men|women)/i);
+      if (genderMatch) {
+        const gender =
+          genderMatch[1].charAt(0).toUpperCase() +
+          genderMatch[1].slice(1).toLowerCase();
+
+        const genderBasedProducts = await productModel.aggregate([
+          { $match: { gender } },
+          {
+            $group: {
+              _id: {
+                category: "$category",
+                subcategory: "$subcategory",
+                type: "$type",
+              },
+            },
+          },
+          { $limit: 5 },
+        ]);
+
+        genderBasedProducts.forEach((item) => {
+          genderSuggestions.push({
+            name: `${gender} products - ${item._id.type || "N/A"}`,
+            keytype: "gender-category",
+            productId: "",
+            categoryId: item._id.category || "",
+            subcategoryId: item._id.subcategory || "",
+            type: item._id.type || "",
             image: "",
           });
         });
@@ -1995,7 +2026,7 @@ class homeControllers {
       }
 
       // 💾 Save recent search
-      const image = suggestions[0]?.image || null; // ab Fuse.js suggestions se image le rahe hain
+      const image = suggestions[0]?.image || null;
       if (userId && search) {
         try {
           let recentDoc = await recentSearch.findOne({ userId });
@@ -2030,7 +2061,7 @@ class homeControllers {
         ...subcategorySuggestions,
         ...genderSuggestions,
         ...suggestions,
-        // ...recentSuggestions, // agar chaho toh recent bhi dikha sakte ho
+        // ...recentSuggestions,
       ];
 
       responseReturn(res, 200, {

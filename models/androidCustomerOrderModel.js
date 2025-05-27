@@ -7,6 +7,11 @@ const customerOrder = new Schema(
       ref: "customers",
       required: true,
     },
+    addressId: {
+      type: Schema.Types.ObjectId,
+      ref: "customeraddresses",
+      required: true,
+    },
     sellerId: {
       type: Schema.Types.ObjectId,
       ref: "sellers",
