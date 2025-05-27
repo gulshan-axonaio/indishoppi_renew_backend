@@ -773,8 +773,43 @@ class homeControllers {
     }
   };
 
+  // allProducts = async (req, res) => {
+  //   try {
+  //     const products = await productModel.aggregate([
+  //       {
+  //         $project: {
+  //           slug: 1,
+  //           brand: 1,
+  //           price: 1,
+  //           stock: 1,
+  //           discount: 1,
+  //           name: 1,
+  //           image: { $arrayElemAt: ["$images", 0] },
+  //         },
+  //       },
+  //     ]);
+
+  //     responseReturn(res, 200, {
+  //       message: "products fetched successfully",
+  //       status: 200,
+  //       products,
+  //     });
+  //   } catch (error) {
+  //     console.log(error.message);
+  //   }
+  // };
+
   allProducts = async (req, res) => {
     try {
+      // Page & Limit from query params
+      let page = parseInt(req.query.page) || 1;
+      let limit = 20;
+      let skip = (page - 1) * limit;
+
+      // Total product count
+      const total = await productModel.countDocuments();
+
+      // Products with pagination
       const products = await productModel.aggregate([
         {
           $project: {
@@ -784,18 +819,29 @@ class homeControllers {
             stock: 1,
             discount: 1,
             name: 1,
-            image: { $arrayElemAt: ["$images", 0] }, // Get the first image from the images array
+            image: { $arrayElemAt: ["$images", 0] },
           },
         },
+        { $skip: skip },
+        { $limit: limit },
       ]);
+
+      const totalPages = Math.ceil(total / limit);
 
       responseReturn(res, 200, {
         message: "products fetched successfully",
         status: 200,
+        currentPage: page,
+        totalPages,
+        totalProducts: total,
         products,
       });
     } catch (error) {
       console.log(error.message);
+      responseReturn(res, 500, {
+        message: "Server error",
+        status: 500,
+      });
     }
   };
 
