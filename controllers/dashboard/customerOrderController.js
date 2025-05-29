@@ -60,7 +60,9 @@ class customerOrderController {
         addressId
       );
 
-      const customerAddress = await customerAddressModel.findById(addressId);
+      const shippingInfo = await customerAddressModel.findById({
+        _id: addressId,
+      });
 
       if (!productId || !quantity || !variationId || !sellerId) {
         return res.status(200).json({
@@ -139,14 +141,7 @@ class customerOrderController {
               size,
             },
           ],
-          shippingInfo: {
-            name: addressName,
-            phonenumber: addressPhonenumber,
-            city: addressCity,
-            state: addressState,
-            district: addressDistrict,
-            area: addressArea,
-          },
+          shippingInfo: shippingInfo,
         });
 
         const allOrders = await androidCustomerOrderModel.find({

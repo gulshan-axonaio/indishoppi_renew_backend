@@ -79,6 +79,67 @@ class orderController {
       console.log(error.message);
     }
   };
+
+  update_address = async (req, res) => {
+    try {
+      const userInfo = req.id;
+      const {
+        addressId,
+        pincode,
+        state,
+        district,
+        landmark,
+        phoneNumber,
+        houseNumber,
+        area,
+        defaultAddress,
+        typeOfAddress,
+        housenumber,
+        phonenumber,
+        name,
+        city,
+      } = req.body;
+
+      const updatedAddress = await customerAddressModel.findByIdAndUpdate(
+        addressId,
+        {
+          pincode,
+          state,
+          district,
+          landmark,
+          phonenumber: phoneNumber || phonenumber,
+          housenumber: houseNumber || housenumber,
+          area,
+          defaultAddress,
+          typeOfAddress,
+          name,
+          city,
+          userId: userInfo,
+        },
+        { new: true } // returns the updated document
+      );
+
+      if (updatedAddress) {
+        responseReturn(res, 200, {
+          address: updatedAddress,
+          message: "Address updated successfully",
+          status: 200,
+        });
+      } else {
+        responseReturn(res, 400, {
+          message: "Address not found or update failed",
+          status: 400,
+        });
+      }
+    } catch (error) {
+      console.log(error.message);
+      responseReturn(res, 500, {
+        message: "Internal server error",
+        status: 500,
+      });
+    }
+  };
+
   markDefaultAddress = async (req, res) => {
     const { addressId } = req.params;
     try {

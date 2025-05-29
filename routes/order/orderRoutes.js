@@ -19,6 +19,12 @@ router.post(
   customerMiddleware,
   orderController.add_address
 );
+
+router.post(
+  "/home/customer/update_address",
+  customerMiddleware,
+  orderController.update_address
+);
 router.get(
   "/home/customer/get_all_address",
   customerMiddleware,
